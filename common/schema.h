@@ -42,6 +42,18 @@ namespace swss {
 #define APP_VLAN_MEMBER_TABLE_NAME        "VLAN_MEMBER_TABLE"
 #define APP_LAG_TABLE_NAME                "LAG_TABLE"
 #define APP_LAG_MEMBER_TABLE_NAME         "LAG_MEMBER_TABLE"
+/*
+ * Independent-LACP make-before-break contract (shared by tlm_teamd and orchagent).
+ * APP_DB LAG_MEMBER_LACP_TABLE  (request, tlm_teamd -> orchagent): key "<lag>:<member>"
+ * STATE_DB LAG_MEMBER_LACP_TABLE (confirm, orchagent -> tlm_teamd): key "<lag>|<member>"
+ * Same table name in the two DBs; STATE variant defined in the STATE_ section below.
+ */
+#define APP_LAG_MEMBER_LACP_TABLE_NAME    "LAG_MEMBER_LACP_TABLE"
+#define LACP_FIELD_COLLECTING_REQUESTED   "collecting_requested"
+#define LACP_FIELD_COLLECTING_REQUEST_ID  "collecting_request_id"
+#define LACP_FIELD_COLLECTING_CONFIRMED   "collecting_confirmed"
+#define LACP_VALUE_TRUE                   "true"
+#define LACP_VALUE_FALSE                  "false"
 #define APP_INTF_TABLE_NAME               "INTF_TABLE"
 #define APP_NEIGH_TABLE_NAME              "NEIGH_TABLE"
 #define APP_ROUTE_TABLE_NAME              "ROUTE_TABLE"
@@ -421,6 +433,7 @@ after libswsscommon deb make.
 #define STATE_PORT_TABLE_NAME                       "PORT_TABLE"
 #define STATE_PORT_OPER_ERR_TABLE_NAME              "PORT_OPERR_TABLE"
 #define STATE_LAG_TABLE_NAME                        "LAG_TABLE"
+#define STATE_LAG_MEMBER_LACP_TABLE_NAME            "LAG_MEMBER_LACP_TABLE"  /* independent-LACP confirm; see APP_LAG_MEMBER_LACP_TABLE_NAME */
 #define STATE_VLAN_TABLE_NAME                       "VLAN_TABLE"
 #define STATE_VLAN_MEMBER_TABLE_NAME                "VLAN_MEMBER_TABLE"
 #define STATE_INTERFACE_TABLE_NAME                  "INTERFACE_TABLE"
