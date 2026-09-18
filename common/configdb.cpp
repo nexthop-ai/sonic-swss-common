@@ -13,17 +13,6 @@ using namespace swss;
 
 namespace {
 
-// How long to wait quietly before the first syslog warning, and the warning
-// cadence after that.
-const int SYSLOG_FIRST_WARN_SEC = 30;
-const int SYSLOG_WARN_INTERVAL_SEC = 300;
-// Once the wait has outlasted any legitimate initialization, escalate the
-// syslog warning to an error.
-const int SYSLOG_ESCALATE_SEC = 900;
-// When stderr is a terminal, tell the human this often why their command
-// is hanging.
-const int TTY_INTERVAL_SEC = 30;
-
 int elapsed_seconds_since(const chrono::steady_clock::time_point& start)
 {
     return static_cast<int>(chrono::duration_cast<chrono::seconds>(
@@ -39,10 +28,10 @@ void print_blocked_on_db_init(const string& db_name, int waited_sec)
     fflush(stderr);
 }
 
-void log_blocked_on_db_init(const string& db_name, int waited_sec)
+void log_blocked_on_db_init(const string& db_name, int waited_sec, int escalate_sec)
 {
     const char *indicator = ConfigDBConnector_Native::INIT_INDICATOR;
-    if (waited_sec >= SYSLOG_ESCALATE_SEC)
+    if (waited_sec >= escalate_sec)
     {
         SWSS_LOG_ERROR("Blocked for %d seconds waiting for %s in %s -- config "
                        "initialization (config-setup.service / config reload / "
@@ -91,9 +80,14 @@ void ConfigDBConnector_Native::db_connect(string db_name, bool wait_for_init, bo
     }
 }
 
+void ConfigDBConnector_Native::wait_for_init_indicator()
+{
+    wait_for_init_indicator(WaitForInitSchedule());
+}
+
 // Block until INIT_INDICATOR is set in the db, warning periodically to
 // syslog (and to the terminal when stderr is a tty) while blocked.
-void ConfigDBConnector_Native::wait_for_init_indicator()
+void ConfigDBConnector_Native::wait_for_init_indicator(const WaitForInitSchedule& schedule)
 {
     auto& client = get_redis_client(m_db_name);
     auto is_initialized = [&]() {
@@ -113,8 +107,8 @@ void ConfigDBConnector_Native::wait_for_init_indicator()
     // Poll for INIT_INDICATOR indefinitely, with periodic warning messages.
     const bool stderr_is_tty = isatty(fileno(stderr)) != 0;
     const auto start = chrono::steady_clock::now();
-    int next_warn_sec = SYSLOG_FIRST_WARN_SEC;
-    int next_tty_sec = TTY_INTERVAL_SEC;
+    int next_warn_sec = schedule.first_warn_sec;
+    int next_tty_sec = schedule.tty_interval_sec;
     while (!is_initialized())
     {
         int waited_sec = elapsed_seconds_since(start);
@@ -122,12 +116,12 @@ void ConfigDBConnector_Native::wait_for_init_indicator()
         if (stderr_is_tty && waited_sec >= next_tty_sec)
         {
             print_blocked_on_db_init(m_db_name, waited_sec);
-            next_tty_sec = waited_sec + TTY_INTERVAL_SEC;
+            next_tty_sec = waited_sec + schedule.tty_interval_sec;
         }
         if (waited_sec >= next_warn_sec)
         {
-            log_blocked_on_db_init(m_db_name, waited_sec);
-            next_warn_sec = waited_sec + SYSLOG_WARN_INTERVAL_SEC;
+            log_blocked_on_db_init(m_db_name, waited_sec, schedule.escalate_sec);
+            next_warn_sec = waited_sec + schedule.warn_interval_sec;
         }
         // Poll until the next warning message is due.
         int next_due_sec = stderr_is_tty ? min(next_warn_sec, next_tty_sec) : next_warn_sec;
