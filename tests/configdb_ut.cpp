@@ -1,6 +1,8 @@
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <future>
+#include <pthread.h>
 #include <thread>
 #include <unistd.h>
 #include "gtest/gtest.h"
@@ -18,6 +20,13 @@ const char *CONFIG_DB_NAME = "CONFIG_DB";
 // Upper bound on any single wait in these tests. Far above the longest
 // expected wait (3 s) so it only trips when the waiter is genuinely stuck.
 const int WAIT_TIMEOUT_SEC = 10;
+
+// Pre-existing SIGINT handler that the waiter must forward to and restore.
+volatile sig_atomic_t g_prior_sigint_calls = 0;
+void prior_sigint_handler(int)
+{
+    ++g_prior_sigint_calls;
+}
 
 // Connect to CONFIG_DB and clear the init indicator so a subsequent
 // wait_for_init=true connect actually blocks.
@@ -151,6 +160,74 @@ TEST_F(ConfigDBWaitForInit, DbConnectWaitsForInit)
     // Then: db_connect blocked until the indicator was set and is connected.
     EXPECT_TRUE(indicator_set) << "db_connect returned before the indicator was set";
     EXPECT_EQ(waiter.getDbName(), CONFIG_DB_NAME);
+}
+
+TEST_F(ConfigDBWaitForInit, SigintInterruptsWait)
+{
+    // Given: a benign SIGINT handler is installed up front, so a signal that
+    // lands before the waiter installs its own cannot kill the process, and
+    // so forwarding and restoration can be checked afterwards. The indicator
+    // stays unset; SIGINT is sent to the waiting thread after 1 second.
+    g_prior_sigint_calls = 0;
+    struct sigaction prior = {};
+    struct sigaction saved = {};
+    prior.sa_handler = prior_sigint_handler;
+    ASSERT_EQ(sigaction(SIGINT, &prior, &saved), 0);
+
+    pthread_t waiter_thread;
+    atomic<bool> waiter_started{false};
+    thread t([&]() {
+        while (!waiter_started)
+        {
+            this_thread::sleep_for(chrono::milliseconds(10));
+        }
+        sleep(1);
+        pthread_kill(waiter_thread, SIGINT);
+    });
+
+    // When: waiting for init with the default 30 second poll.
+    auto start = chrono::steady_clock::now();
+    EXPECT_THROW(expect_returns_in_time([&]() {
+        waiter_thread = pthread_self();
+        waiter_started = true;
+        db.wait_for_init_indicator();
+    }), InterruptedError);
+    auto elapsed = chrono::steady_clock::now() - start;
+    t.join();
+
+    // Then: the poll was cut short by the signal, the signal was forwarded
+    // to the prior handler, and that handler was put back before throwing.
+    EXPECT_GE(elapsed, chrono::seconds(1));
+    EXPECT_LT(elapsed, chrono::seconds(WAIT_TIMEOUT_SEC));
+    EXPECT_EQ(g_prior_sigint_calls, 1);
+    struct sigaction current = {};
+    ASSERT_EQ(sigaction(SIGINT, nullptr, &current), 0);
+    EXPECT_EQ(current.sa_handler, prior_sigint_handler);
+
+    ASSERT_EQ(sigaction(SIGINT, &saved, nullptr), 0);
+}
+
+TEST_F(ConfigDBWaitForInit, SigintHandlerRestoredAfterNormalCompletion)
+{
+    // Given: a pre-existing SIGINT handler and an indicator set 1 second
+    // from now.
+    struct sigaction prior = {};
+    struct sigaction saved = {};
+    prior.sa_handler = prior_sigint_handler;
+    ASSERT_EQ(sigaction(SIGINT, &prior, &saved), 0);
+    thread t = set_indicator_after(1);
+
+    // When: the wait completes normally.
+    expect_returns_in_time([&]() { db.wait_for_init_indicator(); });
+    t.join();
+
+    // Then: the prior handler is back in place.
+    EXPECT_TRUE(indicator_set);
+    struct sigaction current = {};
+    ASSERT_EQ(sigaction(SIGINT, nullptr, &current), 0);
+    EXPECT_EQ(current.sa_handler, prior_sigint_handler);
+
+    ASSERT_EQ(sigaction(SIGINT, &saved, nullptr), 0);
 }
 
 } // namespace
