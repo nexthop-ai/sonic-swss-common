@@ -1,4 +1,5 @@
 import os
+import subprocess
 import time
 import psutil
 import pytest
@@ -259,6 +260,40 @@ def test_DBInterface():
     ks.sort(reverse=True)
     assert ks == sorted(ks0, reverse=True)
     assert isinstance(ks, list)
+
+    # Test scan. COUNT is small so the cursor loop below runs more than one
+    # batch over the handful of keys written above.
+    cursor, batch = db.scan("TEST_DB", 0, "key*", 2)
+    assert isinstance(cursor, int)
+    assert all(isinstance(k, str) for k in batch)
+    collected = set(batch)
+    while cursor != 0:
+        cursor, batch = db.scan("TEST_DB", cursor, "key*", 2)
+        assert all(isinstance(k, str) for k in batch)
+        collected.update(batch)
+    assert collected == set(db.keys("TEST_DB", "key*"))
+
+    # The default match is every key, as with keys().
+    cursor, collected = 0, set()
+    while True:
+        cursor, batch = db.scan("TEST_DB", cursor)
+        collected.update(batch)
+        if cursor == 0:
+            break
+    assert collected == set(db.keys("TEST_DB"))
+
+    # scan() does not reconnect; close() then connect() recovers it.
+    redisclient.setClientName("scan_reconnect_ut")
+    clients = subprocess.check_output(["redis-cli", "-s", "/var/run/redis/redis.sock", "CLIENT", "LIST"], text=True)
+    client_id = next(f.split("=")[1] for line in clients.splitlines() if "name=scan_reconnect_ut" in line
+                     for f in line.split() if f.startswith("id="))
+    subprocess.check_call(["redis-cli", "-s", "/var/run/redis/redis.sock", "CLIENT", "KILL", "ID", client_id])
+    with pytest.raises(RuntimeError):
+        db.scan("TEST_DB", 0, "key*", 2)
+    db.close("TEST_DB")
+    db.connect("TEST_DB")
+    cursor, batch = db.scan("TEST_DB", 0, "key*", 100)
+    assert cursor == 0 and set(batch) == set(db.keys("TEST_DB", "key*"))
 
     # Test del
     db.set("TEST_DB", "key3", "field4", "value5")

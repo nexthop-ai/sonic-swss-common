@@ -883,7 +883,7 @@ pair<int, vector<string>> DBConnector::scan(int cursor, const char *match, uint3
     RedisReply r1(r.releaseChild(1));
     r1.checkReplyType(REDIS_REPLY_ARRAY);
 
-    pair<int64_t, vector<string>> ret;
+    pair<int, vector<string>> ret;
     string cur = r0.getReply<string>();
     try
     {

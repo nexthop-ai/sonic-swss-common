@@ -36,7 +36,10 @@ public:
 
     std::vector<std::string> keys(const std::string& db_name, const char *pattern="*", bool blocking=false);
 
-    std::pair<int, std::vector<std::string>> scan(const std::string& db_name, int cursor = 0, const char *match = "", uint32_t count = 10);
+    // Unlike keys(), scan() takes no blocking flag and does not reconnect.
+    // After a RedisError, close(db_name) then connect(db_name) and restart the
+    // walk from cursor 0; connect() alone keeps the broken client.
+    std::pair<int, std::vector<std::string>> scan(const std::string& db_name, int cursor = 0, const char *match = "*", uint32_t count = 10);
 
     std::shared_ptr<std::string> get(const std::string& db_name, const std::string& _hash, const std::string& key, bool blocking=false);
 

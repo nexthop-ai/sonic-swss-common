@@ -4,7 +4,7 @@ use swss_common_testing::Redis;
 use serial_test::serial;
 
 /// Test SonicV2Connector functionality - Rust version of Python test_SonicV2Connector()
-/// Python: lines 761-767 in test_redis_ut.py
+/// Python: lines 773-779 in test_redis_ut.py
 #[test]
 #[serial]
 fn test_sonicv2connector() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,7 +21,7 @@ fn test_sonicv2connector() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Test DBInterface - Rust version of Python test_DBInterface()
-/// Python: lines 208-369 in test_redis_ut.py
+/// Python: lines 208-380 in test_redis_ut.py
 /// This is the main comprehensive SonicV2Connector test
 #[test]
 #[serial]

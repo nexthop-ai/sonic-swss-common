@@ -125,6 +125,9 @@ std::vector<std::string> DBInterface::keys(const std::string& dbName, const char
 
 std::pair<int, std::vector<std::string>> DBInterface::scan(const std::string& db_name, int cursor, const char *match, uint32_t count)
 {
+    // Not wrapped in blockable<>: a cursor is only valid on the connection
+    // that issued it, so retrying here would resume a dead walk. After a
+    // RedisError the caller closes and reconnects, then restarts from cursor 0.
     return m_redisClient.at(db_name).scan(cursor, match, count);
 }
 

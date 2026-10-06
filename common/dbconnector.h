@@ -273,7 +273,7 @@ public:
 
     std::vector<std::string> keys(const std::string &key);
 
-    std::pair<int, std::vector<std::string>> scan(int cursor = 0, const char *match = "", uint32_t count = 10);
+    std::pair<int, std::vector<std::string>> scan(int cursor = 0, const char *match = "*", uint32_t count = 10);
 
     bool set(const std::string &key, const std::string &value);
     bool set(const std::string &key, int value);
